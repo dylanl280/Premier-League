@@ -97,6 +97,22 @@ WITH checks AS (
            (SELECT COUNT(*) FROM matches
             WHERE referee_id IS NOT NULL AND season < '2000-01')::VARCHAR,
            '0'
+
+    -- Physically impossible: you cannot hit the target more often than you
+    -- shoot. Four source matches did; prepare_data.py nulls those counts.
+    UNION ALL SELECT 17, 'shots on target never exceed shots',
+           (SELECT COUNT(*) FROM matches
+            WHERE home_shots_on_target > home_shots
+               OR away_shots_on_target > away_shots)::VARCHAR,
+           '0'
+
+    -- Equally impossible: goals without a single shot.
+    UNION ALL SELECT 18, 'no goals scored from zero shots',
+           (SELECT COUNT(*) FROM matches
+            WHERE home_shots IS NOT NULL
+              AND ((home_goals > 0 AND home_shots = 0)
+                OR (away_goals > 0 AND away_shots = 0)))::VARCHAR,
+           '0'
 )
 
 SELECT

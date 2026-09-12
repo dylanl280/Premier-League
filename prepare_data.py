@@ -104,6 +104,39 @@ def repair_referees(series: pd.Series) -> tuple[list[str | None], int]:
     return names, malformed
 
 
+def null_impossible_shots(df: pd.DataFrame) -> tuple[pd.DataFrame, int]:
+    """Null shot counts that cannot physically be true.
+
+    Four matches in the source carry impossible values - a side with more
+    shots on target than shots, or scoring goals from zero shots. Since
+    there is no way to know which of the two numbers is wrong, both are
+    nulled for that side rather than guessed at. Left in place they produce
+    shot-accuracy rates above 100%.
+
+    Deliberately NOT treated as errors: goals exceeding shots on target,
+    which happens in 51 matches. That is own goals - the goal counts on the
+    scoreline but is not a shot on target for the team credited with it.
+    The gap is exactly one in 50 of those 51 matches, which is the
+    signature of a single own goal rather than a data fault.
+    """
+    affected = 0
+
+    for side in ("home", "away"):
+        shots = f"{side}_shots"
+        on_target = f"{side}_shots_on_target"
+        goals = f"{side}_goals"
+
+        impossible = (
+            (df[on_target] > df[shots])
+            | ((df[goals] > 0) & (df[shots] == 0))
+        ).fillna(False)
+
+        affected += int(impossible.sum())
+        df.loc[impossible, [shots, on_target]] = pd.NA
+
+    return df, affected
+
+
 def main() -> None:
     print("Loading matches...")
     df = load_matches()
@@ -129,6 +162,9 @@ def main() -> None:
 
     for column in INT_COLUMNS:
         df[column] = pd.array(df[column].to_numpy(), dtype="Float64").astype("Int64")
+
+    df, impossible = null_impossible_shots(df)
+    print(f"  nulled shot counts on {impossible} team-sides with impossible values")
 
     df = df[list(COLUMN_RENAMES.values())]
     df.to_parquet(OUT_PATH, index=False)
