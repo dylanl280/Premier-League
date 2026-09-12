@@ -58,13 +58,16 @@ def collect() -> dict:
     """).to_dict("records")
 
     data["thresholds"] = query("""
-        SELECT season, MAX(played) games,
-               MAX(points) FILTER (WHERE position=1)  champ,
-               MAX(points) FILTER (WHERE position=4)  fourth,
-               MAX(points) FILTER (WHERE position=17) safe,
-               MAX(points) FILTER (WHERE position=18) relegated
-        FROM season_standings GROUP BY season
-        HAVING MAX(played) >= 38 ORDER BY season
+        SELECT s.season, MAX(s.played) games,
+               MAX(t.name)   FILTER (WHERE s.position=1)  champion,
+               MAX(s.points) FILTER (WHERE s.position=1)  champ,
+               MAX(s.points) FILTER (WHERE s.position=4)  fourth,
+               MAX(s.points) FILTER (WHERE s.position=17) safe,
+               MAX(s.points) FILTER (WHERE s.position=18) relegated
+        FROM season_standings s
+        JOIN teams t USING (team_id)
+        GROUP BY s.season
+        HAVING MAX(s.played) >= 38 ORDER BY s.season
     """).to_dict("records")
 
     # Promotion inferred from presence: a club absent the previous season
