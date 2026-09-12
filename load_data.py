@@ -1,12 +1,15 @@
-"""Load the English Premier League results dataset.
+"""Load English Premier League match results, 1993-94 to present.
 
-Source: Kaggle irkaal/english-premier-league-results, which republishes
-football-data.co.uk results. Covers 1993-94 through a partial 2021-22
-(last match 2022-04-10).
+Two sources sit behind this, both originating from football-data.co.uk:
 
-A copy of the parquet lives in data/, so the repo works offline and a
-clone needs no Kaggle round-trip. If that file is missing, the loader
-falls back to downloading via kagglehub.
+  data/results.parquet  the Kaggle mirror (irkaal/english-premier-league-results),
+                        covering 1993-94 up to 2022-04-10
+  data/recent.parquet   seasons fetched directly, 2021-22 onward
+
+They overlap on 2021-22, which the Kaggle copy holds only 309 of 380
+matches of. The fetched seasons win that overlap, so any season present
+in recent.parquet replaces the historical copy wholesale. Refresh the
+recent file with `python update_data.py`.
 """
 
 from pathlib import Path
@@ -15,17 +18,19 @@ import pandas as pd
 
 DATASET = "irkaal/english-premier-league-results"
 
-LOCAL_DATA = Path(__file__).parent / "data" / "results.parquet"
+DATA_DIR = Path(__file__).parent / "data"
+HISTORICAL = DATA_DIR / "results.parquet"
+RECENT = DATA_DIR / "recent.parquet"
 
 # Shots, corners, fouls and cards only start in 2000-01; earlier seasons
 # carry score data alone.
 FIRST_SEASON_WITH_MATCH_STATS = "2000-01"
 
 
-def data_path() -> Path:
-    """Return the parquet path, downloading from Kaggle only if needed."""
-    if LOCAL_DATA.exists():
-        return LOCAL_DATA
+def historical_path() -> Path:
+    """Return the historical parquet, downloading from Kaggle only if absent."""
+    if HISTORICAL.exists():
+        return HISTORICAL
 
     import kagglehub  # imported lazily so the local path needs no Kaggle dep
 
@@ -35,12 +40,20 @@ def data_path() -> Path:
 def load_matches(stats_only: bool = False) -> pd.DataFrame:
     """Return all matches as a DataFrame, sorted oldest first.
 
-    Reads the parquet rather than the CSV: it is typed, parses DateTime
-    directly, and avoids the CSV's cp1252 bytes in the Referee column.
+    Reads parquet rather than CSV: it is typed, parses DateTime directly,
+    and avoids the cp1252 bytes that sit in the CSV's Referee column.
 
     stats_only: drop seasons before 2000-01, which have no shot/card data.
     """
-    df = pd.read_parquet(data_path())
+    df = pd.read_parquet(historical_path())
+
+    if RECENT.exists():
+        recent = pd.read_parquet(RECENT)
+        # Drop whole seasons rather than deduplicating rows: the partial
+        # 2021-22 in the historical file would otherwise survive alongside
+        # the complete fetched one.
+        df = df[~df["Season"].isin(recent["Season"].unique())]
+        df = pd.concat([df, recent], ignore_index=True)
 
     if stats_only:
         df = df[df["Season"] >= FIRST_SEASON_WITH_MATCH_STATS]
@@ -72,7 +85,7 @@ def season_table(df: pd.DataFrame, season: str) -> pd.DataFrame:
 
 if __name__ == "__main__":
     df = load_matches()
-    print(f"source: {data_path()}")
     print(f"{len(df):,} matches, {df.Season.nunique()} seasons")
     print(f"{df.DateTime.min():%Y-%m-%d} -> {df.DateTime.max():%Y-%m-%d}\n")
-    print(season_table(df, "2020-21").head(6).to_string())
+    print("2024-25 top six")
+    print(season_table(df, "2024-25").head(6).to_string())
