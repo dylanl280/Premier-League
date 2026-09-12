@@ -133,6 +133,12 @@ a reserved SQL keyword.
 - **51 matches show goals exceeding shots on target.** These are own goals - the
   goal counts on the scoreline but is not a shot on target for the team credited
   with it. Also correct, not a data error.
+- **`shots_on_target` is not comparable across 2013-14.** The share of shots
+  recorded as on target collapses from 56.6% to 33.2% between 2012-13 and
+  2013-14 and stays there, while goals per shot barely moves. That is the
+  source redefining the field, not a change in football. Goals-per-shot is
+  safe across the whole period; on-target metrics are comparable only within
+  an era.
 - **2020-21 starts in September**, the COVID delay.
 - **The current season is partial** and fills in as matches are played.
 
