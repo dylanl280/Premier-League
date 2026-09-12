@@ -3,275 +3,595 @@
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo+Black&family=Barlow:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500;600&display=swap">
 
-<style>
-  /* A deliberately single-theme page: a floodlit broadcast look. Every
-     colour is painted explicitly so it holds on any host ground. */
-  :root {
-    --ground:     #1B0B22;
-    --surface:    #2A1233;
-    --raised:     #351B40;
-    --rule:       #43254F;
-    --rule-soft:  #351B41;
+<style>/* ============================================================================
+   Premier League analysis - global stylesheet
+   ============================================================================
 
-    --ink:        #F6EFF8;
-    --ink-2:      #C3B0CB;
-    --ink-3:      #907A9A;
+   This is the single source of truth for the project's visual system.
+   build_dashboard.py INLINES this file into docs/index.html at build time; it
+   is deliberately not linked with <link rel="stylesheet">, because published
+   Artifacts run under a Content-Security-Policy that blocks external
+   stylesheets. A link would work on GitHub Pages and fail silently in the
+   Artifact, so the build inlines it and both targets stay identical.
 
-    --accent:     #FF2D78;
-    --won:        #2E96D6;
-    --drew:       #7E6A88;
-    --lost:       #C27D1E;
+   Rules for anyone extending this
+   ------------------------------------------------------------------------
+   1. Never hard-code a colour. Every colour comes from a --c-* token.
+   2. Never hard-code spacing. Use the --space-* scale; it is a 4px grid.
+   3. Space siblings with flex/grid `gap`, not per-element margins.
+   4. Chart colours are validated, not chosen by eye. Before changing
+      --c-series-*, run the six-check validator from the dataviz skill and
+      confirm CVD separation is at least deltaE 8 against the chart surface.
+   5. Figures use --font-mono with tabular-nums so columns line up. Words -
+      including team names - use --font-body, even inside a data table.
 
-    --display: "Archivo Black", "Arial Black", sans-serif;
-    --body:    "Barlow", "Helvetica Neue", Arial, sans-serif;
-    --mono:    "IBM Plex Mono", ui-monospace, Consolas, monospace;
-  }
+   This page commits to a single dark theme on purpose: a floodlit broadcast
+   look. Because there is no light variant, every colour is painted
+   explicitly so the page holds on any host background.
+   ========================================================================= */
 
-  * { box-sizing: border-box; }
 
-  body {
-    background: var(--ground);
-    color: var(--ink);
-    font-family: var(--body);
-    font-size: 16.5px;
-    line-height: 1.6;
-    margin: 0;
-    padding-inline: 20px;
-    padding-block: 44px 80px;
-    -webkit-font-smoothing: antialiased;
-  }
+/* ---------------------------------------------------------------- tokens */
 
-  .wrap { max-width: 74ch; margin-inline: auto; display: flex; flex-direction: column; gap: 60px; }
+:root {
+  /* Surfaces, darkest to lightest. --c-ground is the page; --c-surface is a
+     panel on it; --c-raised is a control or cell inside a panel. */
+  --c-ground:      #1B0B22;
+  --c-surface:     #2A1233;
+  --c-raised:      #351B40;
 
-  .eyebrow {
-    font-family: var(--mono); font-size: 11px; font-weight: 500;
-    letter-spacing: 0.16em; text-transform: uppercase; color: var(--accent);
-    margin: 0 0 12px;
-  }
+  /* Borders. --c-rule separates objects; --c-rule-soft divides rows inside
+     one object and should never be used as an outer edge. */
+  --c-rule:        #43254F;
+  --c-rule-soft:   #351B41;
 
-  h1 {
-    font-family: var(--display); font-size: clamp(32px, 7vw, 54px);
-    line-height: 1.02; letter-spacing: -0.02em; text-wrap: balance; margin: 0 0 16px;
-  }
+  /* Text, in descending emphasis. Text never takes a series colour - a
+     coloured mark beside it carries the identity instead. */
+  --c-ink:         #F6EFF8;
+  --c-ink-2:       #C3B0CB;
+  --c-ink-3:       #907A9A;
 
-  .standfirst { font-size: 18.5px; color: var(--ink-2); margin: 0; max-width: 56ch; }
+  /* The single accent. Spent on hero figures, eyebrows and focus rings -
+     never as a data series, so it cannot be confused with a category. */
+  --c-accent:      #FF2D78;
 
-  h2 {
-    font-family: var(--display); font-size: clamp(20px, 3.6vw, 26px);
-    line-height: 1.15; letter-spacing: -0.01em; margin: 0; text-wrap: balance;
-  }
+  /* Chart series. Validated against --c-surface with the dataviz six checks:
+     both sit inside the dark lightness band (L 0.48-0.67), clear the chroma
+     floor, and separate at deltaE 23.8 under protanopia. A mint/rose pair was
+     rejected first at deltaE 5.5 - the classic green/red failure. */
+  --c-series-a:    #2E96D6;   /* positive pole: won, gained, home */
+  --c-series-b:    #C27D1E;   /* negative pole: lost, conceded, away */
+  --c-series-mid:  #7E6A88;   /* neutral midpoint: drew. Grey by design. */
 
-  h3 {
-    font-family: var(--mono); font-size: 11.5px; font-weight: 600;
-    letter-spacing: 0.14em; text-transform: uppercase; color: var(--ink-3); margin: 0;
-  }
+  /* Type. Three roles: display for headings, body for prose and names,
+     mono for figures, labels and anything that must align in a column. */
+  --font-display: "Archivo Black", "Arial Black", sans-serif;
+  --font-body:    "Barlow", "Helvetica Neue", Arial, sans-serif;
+  --font-mono:    "IBM Plex Mono", ui-monospace, Consolas, monospace;
 
-  section { display: flex; flex-direction: column; gap: 18px; }
+  --text-2xs:  10.5px;   /* mono micro-labels, uppercase */
+  --text-xs:   11.5px;   /* eyebrows, legends, table headers */
+  --text-sm:   13px;     /* table cells, figures in rows */
+  --text-base: 15px;     /* secondary prose, controls */
+  --text-md:   16.5px;   /* body copy */
+  --text-lg:   18.5px;   /* standfirst */
+  --text-xl:   clamp(20px, 3.6vw, 26px);   /* h2 */
+  --text-2xl:  clamp(32px, 7vw, 54px);     /* h1 */
+  --text-fig:  clamp(56px, 13vw, 84px);    /* hero figure */
 
-  p.note { font-size: 15.5px; color: var(--ink-2); margin: 0; max-width: 64ch; }
-  p.note em { color: var(--ink); font-style: normal; font-weight: 600; }
+  --leading-tight: 1.15;
+  --leading-body:  1.6;
 
-  /* ------------------------------------------------------------- hero */
+  /* Spacing - a 4px grid. Nothing outside this scale. */
+  --space-1:  4px;
+  --space-2:  8px;
+  --space-3:  12px;
+  --space-4:  16px;
+  --space-5:  20px;
+  --space-6:  24px;
+  --space-8:  32px;
+  --space-10: 40px;
+  --space-15: 60px;
+  --space-20: 80px;
 
-  .hero {
-    display: flex; align-items: baseline; gap: 20px; flex-wrap: wrap;
-    padding: 26px 0; border-block: 2px solid var(--rule);
-  }
-  .hero .fig {
-    font-family: var(--display); font-size: clamp(56px, 13vw, 84px);
-    line-height: 0.85; letter-spacing: -0.03em; color: var(--accent);
-    font-variant-numeric: tabular-nums;
-  }
-  .hero p { flex: 1 1 22ch; min-width: 0; font-size: 16px; color: var(--ink-2); margin: 0; }
-  .hero strong { color: var(--ink); font-weight: 600; }
+  --radius-xs:   3px;    /* bar ends, swatches */
+  --radius-sm:   4px;
+  --radius-md:   8px;    /* panels, tables, controls */
+  --radius-lg:   10px;
+  --radius-pill: 999px;
 
-  /* ------------------------------------------------------- match finder */
+  /* Measure: prose stays readable, tables may exceed it in their own
+     scroll container. */
+  --measure: 74ch;
 
-  .finder {
-    background: var(--surface); border: 1px solid var(--rule);
-    border-radius: 10px; padding: 22px; display: flex; flex-direction: column; gap: 16px;
-  }
+  --speed: .12s;
+}
 
-  .controls { display: flex; gap: 12px; flex-wrap: wrap; align-items: flex-end; }
-  .field { display: flex; flex-direction: column; gap: 6px; flex: 1 1 160px; min-width: 0; }
-  .field label {
-    font-family: var(--mono); font-size: 10.5px; letter-spacing: 0.12em;
-    text-transform: uppercase; color: var(--ink-3);
-  }
-  .field select, .field input {
-    font-family: var(--body); font-size: 15px; color: var(--ink);
-    background: var(--raised); border: 1px solid var(--rule);
-    border-radius: 7px; padding: 10px 12px; width: 100%;
-    /* keep the native date picker legible on a dark field */
-    color-scheme: dark;
-  }
-  .field select:focus-visible, .field input:focus-visible {
-    outline: 2px solid var(--accent); outline-offset: 1px;
-  }
 
-  .result {
-    border: 1px solid var(--rule); border-radius: 8px;
-    background: var(--raised); padding: 18px; min-height: 92px;
-    display: flex; flex-direction: column; justify-content: center; gap: 8px;
-  }
+/* ------------------------------------------------------------------ base */
 
-  .scoreline { display: flex; align-items: center; gap: 14px; flex-wrap: wrap; }
-  .scoreline .side { font-size: 17px; font-weight: 600; }
-  .scoreline .score {
-    font-family: var(--display); font-size: 30px; letter-spacing: 0.02em;
-    font-variant-numeric: tabular-nums; color: var(--ink);
-  }
-  .scoreline .venue {
-    font-family: var(--mono); font-size: 10.5px; letter-spacing: 0.1em;
-    text-transform: uppercase; color: var(--ink-3);
-    border: 1px solid var(--rule); border-radius: 20px; padding: 2px 9px;
-  }
+* { box-sizing: border-box; }
 
-  .verdict {
-    font-family: var(--mono); font-size: 12px; letter-spacing: 0.09em;
-    text-transform: uppercase; font-weight: 600;
-  }
-  .verdict.w { color: var(--won); }
-  .verdict.d { color: var(--ink-2); }
-  .verdict.l { color: var(--lost); }
+body {
+  background: var(--c-ground);
+  color: var(--c-ink);
+  font-family: var(--font-body);
+  font-size: var(--text-md);
+  line-height: var(--leading-body);
+  margin: 0;
+  /* Side padding set once here, so every child inherits a gutter. Vertical
+     padding uses padding-block so it cannot zero the sides. */
+  padding-inline: var(--space-5);
+  padding-block: 44px var(--space-20);
+  -webkit-font-smoothing: antialiased;
+}
 
-  .empty { color: var(--ink-2); font-size: 15.5px; }
-  .empty strong { color: var(--ink); font-weight: 600; }
+.wrap {
+  max-width: var(--measure);
+  margin-inline: auto;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-15);
+}
 
-  /* ------------------------------------------------------------- bars */
+section { display: flex; flex-direction: column; gap: var(--space-4); }
 
-  .chart { display: flex; flex-direction: column; gap: 10px; }
-  .row { display: grid; grid-template-columns: 7ch 1fr 5.5ch; align-items: center; gap: 12px; }
-  .row .key {
-    font-family: var(--mono); font-size: 12.5px; color: var(--ink-2);
-    text-align: right; font-variant-numeric: tabular-nums;
-  }
-  .row .val {
-    font-family: var(--mono); font-size: 13px; font-weight: 600;
-    color: var(--ink); font-variant-numeric: tabular-nums;
-  }
-  .track { display: flex; gap: 2px; height: 25px; }
-  .seg { height: 100%; border: 0; padding: 0; cursor: default; transition: filter .12s ease; }
-  .seg:hover, .seg:focus-visible { filter: brightness(1.18); }
-  .seg:focus-visible { outline: 2px solid var(--ink); outline-offset: 2px; }
-  .seg.won { background: var(--won); border-radius: 4px 0 0 4px; }
-  .seg.drew { background: var(--drew); }
-  .seg.lost { background: var(--lost); border-radius: 0 4px 4px 0; }
+:focus-visible { outline: 2px solid var(--c-accent); outline-offset: 2px; }
 
-  .wide .row { grid-template-columns: 16ch 1fr 5.5ch; }
-  .wide .row .key { text-align: left; color: var(--ink); font-weight: 500; }
-  .wide .track { height: 32px; }
 
-  .legend {
-    display: flex; flex-wrap: wrap; gap: 15px; font-family: var(--mono);
-    font-size: 11px; letter-spacing: 0.05em; color: var(--ink-2); text-transform: uppercase;
-  }
-  .legend span { display: inline-flex; align-items: center; gap: 7px; }
-  .swatch { width: 11px; height: 11px; border-radius: 2.5px; flex: none; }
-  .swatch.won { background: var(--won); }
-  .swatch.drew { background: var(--drew); }
-  .swatch.lost { background: var(--lost); }
+/* ------------------------------------------------------------ typography */
 
-  /* --------------------------------------------------- season columns */
+h1 {
+  font-family: var(--font-display);
+  font-size: var(--text-2xl);
+  line-height: 1.02;
+  letter-spacing: -0.02em;
+  text-wrap: balance;
+  margin: 0 0 var(--space-4);
+}
 
-  .seasons { display: flex; flex-direction: column; gap: 8px; }
-  .cols {
-    display: flex; align-items: flex-end; gap: 2px; height: 150px;
-    border-bottom: 1px solid var(--rule); padding-bottom: 0;
-  }
-  .col { flex: 1 1 0; min-width: 0; position: relative; border-radius: 3px 3px 0 0; background: var(--won); }
-  .col.flag { background: var(--accent); }
-  .col:hover, .col:focus-visible { filter: brightness(1.2); }
-  .col:focus-visible { outline: 2px solid var(--ink); outline-offset: 1px; }
-  .axis {
-    display: flex; justify-content: space-between;
-    font-family: var(--mono); font-size: 10.5px; color: var(--ink-3);
-  }
+h2 {
+  font-family: var(--font-display);
+  font-size: var(--text-xl);
+  line-height: var(--leading-tight);
+  letter-spacing: -0.01em;
+  text-wrap: balance;
+  margin: 0;
+}
 
-  /* -------------------------------------------------------------- grid */
+/* h3 is a chart caption, not a heading in the visual hierarchy - it labels
+   what the marks below it measure. */
+h3 {
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  font-weight: 600;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--c-ink-3);
+  margin: 0;
+}
 
-  .tiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); gap: 2px;
-           background: var(--rule); border: 1px solid var(--rule); border-radius: 9px; overflow: hidden; }
-  .tiles > div { background: var(--surface); padding: 18px; display: flex; flex-direction: column; gap: 5px; }
-  .tiles .label {
-    font-family: var(--mono); font-size: 10.5px; letter-spacing: 0.11em;
-    text-transform: uppercase; color: var(--ink-3);
-  }
-  .tiles .big {
-    font-family: var(--display); font-size: 30px; line-height: 1;
-    font-variant-numeric: tabular-nums; letter-spacing: -0.015em;
-  }
-  .tiles .sub { font-size: 14px; color: var(--ink-2); line-height: 1.45; }
+.eyebrow {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 500;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--c-accent);
+  margin: 0 0 var(--space-3);
+}
 
-  /* ------------------------------------------------------------ table */
+.standfirst {
+  font-size: var(--text-lg);
+  color: var(--c-ink-2);
+  margin: 0;
+  max-width: 56ch;
+}
 
-  details { border: 1px solid var(--rule); border-radius: 8px; background: var(--surface); }
-  summary {
-    cursor: pointer; padding: 12px 16px; font-family: var(--mono);
-    font-size: 11.5px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--ink-2);
-  }
-  summary:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
-  .scroll { overflow-x: auto; padding: 0 16px 14px; }
-  table { border-collapse: collapse; width: 100%; font-size: 13.5px; }
-  th, td {
-    text-align: right; padding: 6px 9px; border-bottom: 1px solid var(--rule-soft);
-    font-family: var(--mono); font-variant-numeric: tabular-nums; white-space: nowrap;
-  }
-  th:first-child, td:first-child { text-align: left; }
-  th { color: var(--ink-3); font-weight: 500; font-size: 10.5px; letter-spacing: 0.07em; text-transform: uppercase; }
-  tbody tr:last-child td { border-bottom: 0; }
-  td.sig { color: var(--accent); }
-  td.champ { font-family: var(--body); font-weight: 600; color: var(--ink); letter-spacing: 0; }
+p.note {
+  font-size: var(--text-base);
+  color: var(--c-ink-2);
+  margin: 0;
+  max-width: 64ch;
+}
 
-  /* ---------------------------------------------------------- ladder */
+/* <em> in a note marks a figure worth stopping on, not emphasis of tone. */
+p.note em { color: var(--c-ink); font-style: normal; font-weight: 600; }
 
-  .ladder { display: flex; flex-direction: column; gap: 12px; }
-  .lrow { display: grid; grid-template-columns: 15ch 1fr; gap: 12px; align-items: center; }
-  .lrow .key { font-size: 14.5px; color: var(--ink); font-weight: 500; }
-  .lbars { display: flex; flex-direction: column; gap: 4px; }
-  .lbar { display: grid; grid-template-columns: 4.5ch 1fr 6ch; gap: 8px; align-items: center; }
-  .lbar .venue {
-    font-family: var(--mono); font-size: 10.5px; letter-spacing: 0.08em;
-    text-transform: uppercase; color: var(--ink-3); text-align: right;
-  }
-  .lbar .meter { height: 14px; background: var(--rule-soft); border-radius: 3px; position: relative; }
-  .lbar .fill {
-    position: absolute; right: 50%; top: 0; height: 100%;
-    background: var(--lost); border-radius: 3px 0 0 3px;
-  }
-  .lbar .zero { position: absolute; left: 50%; top: -3px; bottom: -3px; width: 1px; background: var(--rule); }
-  .lbar .amt {
-    font-family: var(--mono); font-size: 12.5px; font-weight: 600;
-    color: var(--lost); font-variant-numeric: tabular-nums;
-  }
 
-  @media (max-width: 440px) { .lrow { grid-template-columns: 1fr; gap: 6px; } }
+/* ------------------------------------------------------------------ hero */
 
-  /* ----------------------------------------------------------- method */
+.hero {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-5);
+  flex-wrap: wrap;
+  padding-block: var(--space-6);
+  border-block: 2px solid var(--c-rule);
+}
 
-  .method { border-top: 2px solid var(--rule); padding-top: 22px; display: flex; flex-direction: column; gap: 12px; }
-  .method p { font-size: 14.5px; color: var(--ink-2); margin: 0; max-width: 66ch; line-height: 1.6; }
-  .method code {
-    font-family: var(--mono); font-size: 0.88em; background: var(--surface);
-    padding: 1px 5px; border-radius: 3px; color: var(--ink);
-  }
-  .method a { color: var(--accent); }
+.hero .fig {
+  font-family: var(--font-display);
+  font-size: var(--text-fig);
+  line-height: 0.85;
+  letter-spacing: -0.03em;
+  color: var(--c-accent);
+  font-variant-numeric: tabular-nums;
+}
 
-  #tip {
-    position: fixed; z-index: 20; pointer-events: none; background: var(--ink);
-    color: var(--ground); font-family: var(--mono); font-size: 11.5px; line-height: 1.4;
-    padding: 7px 10px; border-radius: 5px; white-space: nowrap; opacity: 0; transition: opacity .1s ease;
-  }
-  #tip[data-show="1"] { opacity: 1; }
+.hero p { flex: 1 1 22ch; min-width: 0; font-size: var(--text-md); color: var(--c-ink-2); margin: 0; }
+.hero strong { color: var(--c-ink); font-weight: 600; }
 
-  @media (prefers-reduced-motion: reduce) { * { transition: none !important; } }
 
-  @media (max-width: 440px) {
-    .row { grid-template-columns: 5.5ch 1fr 5ch; gap: 8px; }
-    .wide .row { grid-template-columns: 1fr; gap: 6px; }
-    .wide .row .val { text-align: left; }
-    .cols { height: 116px; }
-  }
+/* --------------------------------------------------------- stacked bars */
+
+/* A row is: key | track | value. The track holds 2-3 segments whose widths
+   are percentages summing to 100, separated by a 2px ground-coloured gap so
+   adjacent fills never touch. */
+
+.chart { display: flex; flex-direction: column; gap: var(--space-2); }
+
+.row {
+  display: grid;
+  grid-template-columns: 7ch 1fr 5.5ch;
+  align-items: center;
+  gap: var(--space-3);
+}
+
+.row .key {
+  font-family: var(--font-mono);
+  font-size: var(--text-sm);
+  color: var(--c-ink-2);
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+.row .val {
+  font-family: var(--font-mono);
+  font-size: var(--text-sm);
+  font-weight: 600;
+  color: var(--c-ink);
+  font-variant-numeric: tabular-nums;
+}
+
+.track { display: flex; gap: 2px; height: 25px; }
+
+.seg {
+  height: 100%;
+  border: 0;
+  padding: 0;
+  cursor: default;
+  transition: filter var(--speed) ease;
+}
+.seg:hover, .seg:focus-visible { filter: brightness(1.18); }
+
+/* Only the outer ends round, so a stack reads as one bar. */
+.seg.won  { background: var(--c-series-a);   border-radius: var(--radius-sm) 0 0 var(--radius-sm); }
+.seg.drew { background: var(--c-series-mid); }
+.seg.lost { background: var(--c-series-b);   border-radius: 0 var(--radius-sm) var(--radius-sm) 0; }
+
+/* .wide swaps the numeric key for a named one and gives the bar more height. */
+.wide .row { grid-template-columns: 16ch 1fr 5.5ch; }
+.wide .row .key { text-align: left; color: var(--c-ink); font-weight: 500; }
+.wide .track { height: 32px; }
+
+
+/* ---------------------------------------------------------------- legend */
+
+/* Present whenever two or more series are drawn, so identity is never
+   carried by colour alone. */
+.legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 15px;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  letter-spacing: 0.05em;
+  color: var(--c-ink-2);
+  text-transform: uppercase;
+}
+
+.legend span { display: inline-flex; align-items: center; gap: 7px; }
+
+.swatch { width: 11px; height: 11px; border-radius: var(--radius-xs); flex: none; }
+.swatch.won  { background: var(--c-series-a); }
+.swatch.drew { background: var(--c-series-mid); }
+.swatch.lost { background: var(--c-series-b); }
+
+
+/* -------------------------------------------------------- season columns */
+
+.seasons { display: flex; flex-direction: column; gap: var(--space-2); }
+
+.cols {
+  display: flex;
+  align-items: flex-end;
+  gap: 2px;
+  height: 150px;
+  border-bottom: 1px solid var(--c-rule);
+}
+
+.col {
+  flex: 1 1 0;
+  min-width: 0;
+  border-radius: var(--radius-xs) var(--radius-xs) 0 0;
+  background: var(--c-series-a);
+  border: 0;
+  padding: 0;
+}
+/* .flag marks the one column the surrounding prose is about. */
+.col.flag { background: var(--c-accent); }
+.col:hover, .col:focus-visible { filter: brightness(1.2); }
+
+.axis {
+  display: flex;
+  justify-content: space-between;
+  font-family: var(--font-mono);
+  font-size: var(--text-2xs);
+  color: var(--c-ink-3);
+}
+
+
+/* ------------------------------------------------- diverging ladder bars */
+
+/* Bars grow from a centre zero line: left for a penalty, right for a gain.
+   One scale across every bar in the group, so rows stay comparable. */
+
+.ladder { display: flex; flex-direction: column; gap: var(--space-3); }
+
+.lrow { display: grid; grid-template-columns: 15ch 1fr; gap: var(--space-3); align-items: center; }
+.lrow .key { font-size: var(--text-base); color: var(--c-ink); font-weight: 500; }
+
+.lbars { display: flex; flex-direction: column; gap: var(--space-1); }
+.lbar { display: grid; grid-template-columns: 4.5ch 1fr 6ch; gap: var(--space-2); align-items: center; }
+
+.lbar .venue {
+  font-family: var(--font-mono);
+  font-size: var(--text-2xs);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--c-ink-3);
+  text-align: right;
+}
+
+.lbar .meter { height: 14px; background: var(--c-rule-soft); border-radius: var(--radius-xs); position: relative; }
+.lbar .fill  { position: absolute; top: 0; height: 100%; }
+.lbar .zero  { position: absolute; left: 50%; top: -3px; bottom: -3px; width: 1px; background: var(--c-rule); }
+
+.lbar .amt {
+  font-family: var(--font-mono);
+  font-size: var(--text-sm);
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
+
+/* ----------------------------------------------------------------- tiles */
+
+/* A 1px grid gap over a rule-coloured background draws the dividers, so the
+   tiles read as one object rather than separate cards. */
+.tiles {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
+  gap: 2px;
+  background: var(--c-rule);
+  border: 1px solid var(--c-rule);
+  border-radius: var(--radius-lg);
+  overflow: hidden;
+}
+
+.tiles > div {
+  background: var(--c-surface);
+  padding: var(--space-4);
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+
+.tiles .label {
+  font-family: var(--font-mono);
+  font-size: var(--text-2xs);
+  letter-spacing: 0.11em;
+  text-transform: uppercase;
+  color: var(--c-ink-3);
+}
+
+.tiles .big {
+  font-family: var(--font-display);
+  font-size: 30px;
+  line-height: 1;
+  letter-spacing: -0.015em;
+  font-variant-numeric: tabular-nums;
+}
+
+.tiles .sub { font-size: 14px; color: var(--c-ink-2); line-height: 1.45; }
+
+
+/* ---------------------------------------------------------- match finder */
+
+.finder {
+  background: var(--c-surface);
+  border: 1px solid var(--c-rule);
+  border-radius: var(--radius-lg);
+  padding: var(--space-5);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+}
+
+.controls { display: flex; gap: var(--space-3); flex-wrap: wrap; align-items: flex-end; }
+.field { display: flex; flex-direction: column; gap: 6px; flex: 1 1 160px; min-width: 0; }
+
+.field label {
+  font-family: var(--font-mono);
+  font-size: var(--text-2xs);
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--c-ink-3);
+}
+
+.field select, .field input {
+  font-family: var(--font-body);
+  font-size: var(--text-base);
+  color: var(--c-ink);
+  background: var(--c-raised);
+  border: 1px solid var(--c-rule);
+  border-radius: 7px;
+  padding: 10px var(--space-3);
+  width: 100%;
+  /* Keeps the native date picker's own chrome legible on a dark field. */
+  color-scheme: dark;
+}
+
+.result {
+  border: 1px solid var(--c-rule);
+  border-radius: var(--radius-md);
+  background: var(--c-raised);
+  padding: var(--space-4);
+  min-height: 92px;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: var(--space-2);
+}
+
+.scoreline { display: flex; align-items: center; gap: 14px; flex-wrap: wrap; }
+.scoreline .side { font-size: 17px; font-weight: 600; }
+
+.scoreline .score {
+  font-family: var(--font-display);
+  font-size: 30px;
+  letter-spacing: 0.02em;
+  color: var(--c-ink);
+  font-variant-numeric: tabular-nums;
+}
+
+.scoreline .venue {
+  font-family: var(--font-mono);
+  font-size: var(--text-2xs);
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--c-ink-3);
+  border: 1px solid var(--c-rule);
+  border-radius: var(--radius-pill);
+  padding: 2px 9px;
+}
+
+.verdict {
+  font-family: var(--font-mono);
+  font-size: var(--text-sm);
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+  font-weight: 600;
+}
+.verdict.w { color: var(--c-series-a); }
+.verdict.d { color: var(--c-ink-2); }
+.verdict.l { color: var(--c-series-b); }
+
+.empty { color: var(--c-ink-2); font-size: var(--text-base); }
+.empty strong { color: var(--c-ink); font-weight: 600; }
+
+
+/* ----------------------------------------------------------------- table */
+
+/* Every chart has a table view, so the data is reachable without colour. */
+
+details { border: 1px solid var(--c-rule); border-radius: var(--radius-md); background: var(--c-surface); }
+
+summary {
+  cursor: pointer;
+  padding: var(--space-3) var(--space-4);
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--c-ink-2);
+}
+
+/* Tables may run wider than the measure - they scroll in here so the page
+   body never scrolls sideways. */
+.scroll { overflow-x: auto; padding: 0 var(--space-4) 14px; }
+
+table { border-collapse: collapse; width: 100%; font-size: var(--text-sm); }
+
+th, td {
+  text-align: right;
+  padding: 6px 9px;
+  border-bottom: 1px solid var(--c-rule-soft);
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+th:first-child, td:first-child { text-align: left; }
+
+th {
+  color: var(--c-ink-3);
+  font-weight: 500;
+  font-size: var(--text-2xs);
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+}
+
+tbody tr:last-child td { border-bottom: 0; }
+
+td.sig { color: var(--c-accent); }
+
+/* Names are words, not figures - body face, no letter-spacing. */
+td.champ { font-family: var(--font-body); font-weight: 600; color: var(--c-ink); letter-spacing: 0; }
+
+
+/* ---------------------------------------------------------------- method */
+
+.method { border-top: 2px solid var(--c-rule); padding-top: var(--space-5); display: flex; flex-direction: column; gap: var(--space-3); }
+.method p { font-size: 14.5px; color: var(--c-ink-2); margin: 0; max-width: 66ch; line-height: var(--leading-body); }
+
+.method code {
+  font-family: var(--font-mono);
+  font-size: 0.88em;
+  background: var(--c-surface);
+  padding: 1px 5px;
+  border-radius: var(--radius-xs);
+  color: var(--c-ink);
+}
+
+.method a { color: var(--c-accent); }
+
+
+/* --------------------------------------------------------------- tooltip */
+
+#tip {
+  position: fixed;
+  z-index: 20;
+  pointer-events: none;
+  background: var(--c-ink);
+  color: var(--c-ground);
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  line-height: 1.4;
+  padding: 7px 10px;
+  border-radius: 5px;
+  white-space: nowrap;
+  opacity: 0;
+  transition: opacity .1s ease;
+}
+#tip[data-show="1"] { opacity: 1; }
+
+
+/* ------------------------------------------------------------ responsive */
+
+@media (prefers-reduced-motion: reduce) {
+  * { transition: none !important; animation: none !important; }
+}
+
+/* Phone: keys shrink, named rows stack above their bars. */
+@media (max-width: 440px) {
+  .row { grid-template-columns: 5.5ch 1fr 5ch; gap: var(--space-2); }
+  .wide .row { grid-template-columns: 1fr; gap: 6px; }
+  .wide .row .val { text-align: left; }
+  .lrow { grid-template-columns: 1fr; gap: 6px; }
+  .cols { height: 116px; }
+}
 </style>
 
 <div class="wrap">
@@ -328,12 +648,12 @@
     <div class="tiles">
       <div>
         <span class="label">Home side on target</span>
-        <span class="big" style="color:var(--won)">64.8%</span>
+        <span class="big" style="color:var(--c-series-a)">64.8%</span>
         <span class="sub">+20.2 points on a 44.6% base rate.</span>
       </div>
       <div>
         <span class="label">Away side on target</span>
-        <span class="big" style="color:var(--won)">57.4%</span>
+        <span class="big" style="color:var(--c-series-a)">57.4%</span>
         <span class="sub">+25.5 points on a 31.9% base. It helps visitors more.</span>
       </div>
     </div>
@@ -395,7 +715,7 @@
     <div class="tiles">
       <div>
         <span class="label">Strictness</span>
-        <span class="big" style="color:var(--accent)">8 / 34</span>
+        <span class="big" style="color:var(--c-accent)">8 / 34</span>
         <span class="sub">differ significantly in cards shown — a spread of 1.58 yellows per match.</span>
       </div>
       <div>
@@ -621,7 +941,7 @@
         const fill = document.createElement("i"); fill.className = "fill";
         const down = v < 0;
         fill.style.width = (50 * Math.abs(v) / max) + "%";
-        fill.style.background = down ? "var(--lost)" : "var(--won)";
+        fill.style.background = down ? "var(--c-series-b)" : "var(--c-series-a)";
         if (down) {
           fill.style.right = "50%"; fill.style.left = "auto";
           fill.style.borderRadius = "3px 0 0 3px";
@@ -632,7 +952,7 @@
         meter.append(zero, fill);
 
         const amt = document.createElement("span"); amt.className = "amt";
-        amt.style.color = down ? "var(--lost)" : "var(--won)";
+        amt.style.color = down ? "var(--c-series-b)" : "var(--c-series-a)";
         amt.textContent = (v > 0 ? "+" : "") + v.toFixed(1) + " pts";
 
         const text = `${r.metric} · ${venue} · ${v.toFixed(1)} points vs base rate`;

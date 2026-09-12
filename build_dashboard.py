@@ -17,6 +17,7 @@ from db import query
 
 ROOT = Path(__file__).parent
 TEMPLATE = ROOT / "docs" / "_template.html"
+STYLES = ROOT / "docs" / "styles.css"
 OUTPUT = ROOT / "docs" / "index.html"
 REFEREE_CSV = ROOT / "analysis" / "output" / "b_strictness.csv"
 
@@ -185,10 +186,19 @@ def main() -> None:
     json.loads(payload)
 
     html = TEMPLATE.read_text(encoding="utf-8")
-    if "__DATA__" not in html:
-        raise SystemExit(f"{TEMPLATE} has no __DATA__ placeholder")
+    for placeholder in ("__DATA__", "__STYLES__"):
+        if placeholder not in html:
+            raise SystemExit(f"{TEMPLATE} has no {placeholder} placeholder")
 
-    OUTPUT.write_text(html.replace("__DATA__", payload), encoding="utf-8")
+    # styles.css is inlined rather than linked. A published Artifact runs
+    # under a CSP that blocks external stylesheets, so a <link> would work on
+    # GitHub Pages and fail silently in the Artifact; inlining keeps the two
+    # targets byte-identical.
+    css = STYLES.read_text(encoding="utf-8")
+    print(f"  inlining {STYLES.name} ({len(css)/1024:.0f} KB)")
+
+    html = html.replace("__STYLES__", css).replace("__DATA__", payload)
+    OUTPUT.write_text(html, encoding="utf-8")
     print(f"\nWrote {OUTPUT.relative_to(ROOT)} ({OUTPUT.stat().st_size/1024:.0f} KB)")
 
 

@@ -161,6 +161,30 @@ spanning 1.58 yellow cards per match), but show **no home/away card bias** and
 **no measurable effect on results** (0 of 34 on both). Results land in
 `analysis/output/`.
 
+## Styling
+
+[docs/styles.css](docs/styles.css) is the single source of truth for the
+published page's visual system. Five rules:
+
+1. **Never hard-code a colour.** Every colour comes from a `--c-*` token.
+2. **Never hard-code spacing.** Use the `--space-*` scale — a 4px grid.
+3. **Space siblings with `gap`**, not per-element margins.
+4. **Chart colours are validated, not chosen.** Before changing any
+   `--c-series-*`, run the six-check validator and confirm colourblind
+   separation of at least ΔE 8 against the chart surface. The shipped blue
+   and amber clear it at 23.8; a mint/rose pair was rejected first at 5.5.
+5. **Figures use `--font-mono`** with tabular numerals so columns align.
+   Words — including team names — use `--font-body`, even inside a table.
+
+The stylesheet is **inlined at build time, not linked.** A published Artifact
+runs under a Content-Security-Policy that blocks external stylesheets, so a
+`<link>` would work on GitHub Pages and fail silently in the Artifact.
+`build_dashboard.py` inlines it so both targets stay identical.
+
+The page commits to a single dark theme deliberately — a floodlit broadcast
+look — so every colour is painted explicitly rather than relying on a
+`prefers-color-scheme` fallback.
+
 ## Refreshing
 
 ```bash
@@ -179,6 +203,9 @@ python load_postgres.py    # rebuild
 | `sql/build.sql` | Creates all tables and views |
 | `sql/validate.sql` | 18 integrity checks |
 | `db.py` | `query()` helper returning DataFrames |
+| `build_dashboard.py` | Regenerates the published page from the database |
+| `docs/styles.css` | Global stylesheet — tokens, components, rules |
+| `docs/_template.html` | Page markup with `__STYLES__` / `__DATA__` slots |
 | `queries/referees.sql` | Referee exploration queries |
 | `analysis/referee_bias.py` | Phase 2a statistical analysis |
 | `scripts/pg-start.ps1` / `pg-stop.ps1` | Start and stop the local server |
