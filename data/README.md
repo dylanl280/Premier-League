@@ -30,6 +30,24 @@ Refresh the recent seasons — including the in-progress one — with:
 python update_data.py
 ```
 
+## Licensing
+
+`results.parquet` comes from a Kaggle dataset published under
+**CC0: Public Domain** (confirmed via the Kaggle API's `licenseName`
+field), so redistributing it here carries no restriction and requires no
+attribution. The credit above is courtesy, not obligation.
+
+`recent.parquet` is fetched from football-data.co.uk, which states no
+explicit licence. Its `notes.txt` is a column key plus acknowledgements
+of its own sources (BBC, Flashscore, ESPN Soccer), and neither it nor the
+site disclaimer grants or withholds redistribution rights. What is stored
+here is limited to match facts - scores, shots, cards, referees - and
+excludes the ~110 bookmaker odds columns the source files also carry.
+
+If you would rather not redistribute the fetched seasons at all, delete
+`recent.parquet` and add it to `.gitignore`; `update_data.py` rebuilds it
+on demand and `load_data.py` works without it.
+
 ## Caveats
 
 - **The current season is partial** by definition; it fills in as matches
