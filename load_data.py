@@ -1,27 +1,35 @@
-"""Load the English Premier League results dataset from Kaggle.
+"""Load the English Premier League results dataset.
 
-Dataset: irkaal/english-premier-league-results
-Covers 1993-94 through a partial 2021-22 (last match 2022-04-10).
+Source: Kaggle irkaal/english-premier-league-results, which republishes
+football-data.co.uk results. Covers 1993-94 through a partial 2021-22
+(last match 2022-04-10).
 
-kagglehub caches the download under ~/.cache/kagglehub, so repeated calls
-hit the local copy rather than re-downloading.
+A copy of the parquet lives in data/, so the repo works offline and a
+clone needs no Kaggle round-trip. If that file is missing, the loader
+falls back to downloading via kagglehub.
 """
 
 from pathlib import Path
 
-import kagglehub
 import pandas as pd
 
 DATASET = "irkaal/english-premier-league-results"
+
+LOCAL_DATA = Path(__file__).parent / "data" / "results.parquet"
 
 # Shots, corners, fouls and cards only start in 2000-01; earlier seasons
 # carry score data alone.
 FIRST_SEASON_WITH_MATCH_STATS = "2000-01"
 
 
-def dataset_dir() -> Path:
-    """Download the dataset if needed and return its local directory."""
-    return Path(kagglehub.dataset_download(DATASET))
+def data_path() -> Path:
+    """Return the parquet path, downloading from Kaggle only if needed."""
+    if LOCAL_DATA.exists():
+        return LOCAL_DATA
+
+    import kagglehub  # imported lazily so the local path needs no Kaggle dep
+
+    return Path(kagglehub.dataset_download(DATASET)) / "results.parquet"
 
 
 def load_matches(stats_only: bool = False) -> pd.DataFrame:
@@ -32,7 +40,7 @@ def load_matches(stats_only: bool = False) -> pd.DataFrame:
 
     stats_only: drop seasons before 2000-01, which have no shot/card data.
     """
-    df = pd.read_parquet(dataset_dir() / "results.parquet")
+    df = pd.read_parquet(data_path())
 
     if stats_only:
         df = df[df["Season"] >= FIRST_SEASON_WITH_MATCH_STATS]
@@ -64,6 +72,7 @@ def season_table(df: pd.DataFrame, season: str) -> pd.DataFrame:
 
 if __name__ == "__main__":
     df = load_matches()
+    print(f"source: {data_path()}")
     print(f"{len(df):,} matches, {df.Season.nunique()} seasons")
     print(f"{df.DateTime.min():%Y-%m-%d} -> {df.DateTime.max():%Y-%m-%d}\n")
     print(season_table(df, "2020-21").head(6).to_string())
