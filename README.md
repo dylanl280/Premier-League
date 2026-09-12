@@ -102,6 +102,63 @@ Column names are explicit snake_case rather than the source's `HS`/`AS`/`FTHG`
 shorthand. That is not cosmetic: the source's away-shots column is literally named
 `AS`, a reserved SQL keyword.
 
+## PostgreSQL and DBeaver
+
+The same data also lives in PostgreSQL, for querying through DBeaver. DuckDB
+stays the analysis engine; Postgres is the GUI-friendly copy.
+
+### Why port 5433
+
+This machine already runs a **PostgreSQL 17 Windows service on 5432**. That
+instance is left completely alone. The project instance is a separate
+PostgreSQL 18.6 on **5433**, with its data directory at `C:\pgdata\epl`,
+installed from the binaries zip so it needs no admin rights.
+
+It runs as a user process, not a service, so **it does not survive a reboot**:
+
+```powershell
+.\scripts\pg-start.ps1     # start it (also after every reboot)
+.\scripts\pg-stop.ps1      # stop it
+```
+
+The data directory deliberately sits outside OneDrive. A Postgres cluster
+inside a synced folder invites corruption, for the same reason the venv is
+kept out.
+
+### Loading
+
+```bash
+python prepare_data.py     # if not already run
+python load_postgres.py    # COPY into staging, then run sql/postgres/build.sql
+```
+
+Verify with the same 16 checks:
+
+```bash
+psql -h localhost -p 5433 -U postgres -d epl -f sql/postgres/validate.sql
+```
+
+All 16 pass against both engines. Since the DuckDB and Postgres schemas are
+built by separate SQL files, their agreement cross-checks the modelling.
+
+### Connecting DBeaver
+
+DBeaver Community 26.2 is installed at `%LOCALAPPDATA%\Programs\dbeaver`
+(portable, bundled JRE, no admin). Two connections are pre-configured:
+
+| Connection | URL |
+|---|---|
+| EPL (PostgreSQL 18) | `jdbc:postgresql://localhost:5433/epl` |
+| EPL (DuckDB) | `jdbc:duckdb:.../data/epl.duckdb` (read-only) |
+
+Passwords are not saved in the DBeaver config, so it prompts on first
+connect. Credentials live in `.env`, which is gitignored; see `.env.example`.
+
+If a connection does not appear, add it by hand: **Database → New Database
+Connection → PostgreSQL**, host `localhost`, port `5433`, database `epl`,
+user `postgres`. DBeaver bundles the Postgres driver; for DuckDB it fetches
+the JDBC driver from Maven on first connect.
+
 ## Data caveats
 
 - **Match stats begin in 2000-01.** Shots, corners, fouls, cards and referee are
@@ -132,6 +189,12 @@ python build_db.py       # rebuild
 | `sql/validate.sql` | 16 integrity checks |
 | `build_db.py` | Runs the above end to end |
 | `db.py` | `query()` helper returning DataFrames |
+| `load_postgres.py` | Loads the same data into PostgreSQL |
+| `sql/postgres/build.sql` | Postgres schema and views |
+| `sql/postgres/validate.sql` | The same 16 checks, Postgres dialect |
+| `scripts/pg-start.ps1` | Start the local Postgres instance |
+| `scripts/pg-stop.ps1` | Stop it |
+| `queries/referees.sql` | Referee exploration queries |
 
 `data/epl.duckdb` and `data/matches_clean.parquet` are derived and gitignored —
 rebuild them rather than committing them.
