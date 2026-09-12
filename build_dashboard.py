@@ -88,6 +88,59 @@ def collect() -> dict:
         GROUP BY 1 ORDER BY 1
     """).to_dict("records")
 
+    # Discipline, expressed as the change against that side's own base rate
+    # so venue is held constant. Away sides both foul more and win less, so
+    # an uncontrolled figure mostly measures venue.
+    data["discipline"] = query("""
+        WITH base AS (
+            SELECT 100.0*COUNT(*) FILTER (WHERE result='H')/COUNT(*) home_base,
+                   100.0*COUNT(*) FILTER (WHERE result='A')/COUNT(*) away_base
+            FROM matches WHERE home_fouls IS NOT NULL
+        ), m AS (SELECT * FROM matches WHERE home_fouls IS NOT NULL)
+        SELECT 'More fouls' metric,
+            ROUND((100.0*COUNT(*) FILTER (WHERE home_fouls>away_fouls AND result='H')
+                 / NULLIF(COUNT(*) FILTER (WHERE home_fouls>away_fouls),0)
+                 - (SELECT home_base FROM base))::NUMERIC,1) home_lift,
+            ROUND((100.0*COUNT(*) FILTER (WHERE away_fouls>home_fouls AND result='A')
+                 / NULLIF(COUNT(*) FILTER (WHERE away_fouls>home_fouls),0)
+                 - (SELECT away_base FROM base))::NUMERIC,1) away_lift
+        FROM m
+        UNION ALL SELECT 'More yellow cards',
+            ROUND((100.0*COUNT(*) FILTER (WHERE home_yellows>away_yellows AND result='H')
+                 / NULLIF(COUNT(*) FILTER (WHERE home_yellows>away_yellows),0)
+                 - (SELECT home_base FROM base))::NUMERIC,1),
+            ROUND((100.0*COUNT(*) FILTER (WHERE away_yellows>home_yellows AND result='A')
+                 / NULLIF(COUNT(*) FILTER (WHERE away_yellows>home_yellows),0)
+                 - (SELECT away_base FROM base))::NUMERIC,1)
+        FROM m
+        UNION ALL SELECT 'More red cards',
+            ROUND((100.0*COUNT(*) FILTER (WHERE home_reds>away_reds AND result='H')
+                 / NULLIF(COUNT(*) FILTER (WHERE home_reds>away_reds),0)
+                 - (SELECT home_base FROM base))::NUMERIC,1),
+            ROUND((100.0*COUNT(*) FILTER (WHERE away_reds>home_reds AND result='A')
+                 / NULLIF(COUNT(*) FILTER (WHERE away_reds>home_reds),0)
+                 - (SELECT away_base FROM base))::NUMERIC,1)
+        FROM m
+    """).to_dict("records")
+
+    # The foul gradient is almost flat - the point of showing it beside the
+    # shots-on-target curve, which climbs from 43.8% to 92.2%.
+    data["foul_gap"] = query("""
+        SELECT CASE WHEN edge BETWEEN 1 AND 2 THEN '1-2 more'
+                    WHEN edge BETWEEN 3 AND 5 THEN '3-5 more'
+                    WHEN edge BETWEEN 6 AND 9 THEN '6-9 more'
+                    ELSE '10+ more' END gap,
+               COUNT(*) matches,
+               ROUND(100.0*COUNT(*) FILTER (WHERE result=ldr)/COUNT(*),1) won,
+               ROUND(100.0*COUNT(*) FILTER (WHERE result='D')/COUNT(*),1) drew,
+               ROUND(100.0*COUNT(*) FILTER (WHERE result<>'D' AND result<>ldr)/COUNT(*),1) lost
+        FROM (SELECT result, ABS(home_fouls-away_fouls) edge,
+                     CASE WHEN home_fouls>away_fouls THEN 'H'
+                          WHEN away_fouls>home_fouls THEN 'A' END ldr
+              FROM matches WHERE home_fouls IS NOT NULL) m
+        WHERE ldr IS NOT NULL GROUP BY 1 ORDER BY MIN(edge)
+    """).to_dict("records")
+
     if REFEREE_CSV.exists():
         strictness = pd.read_csv(REFEREE_CSV).sort_values("vs_average")
         data["referee_strictness"] = strictness[

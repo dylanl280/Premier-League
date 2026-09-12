@@ -223,6 +223,30 @@
   td.sig { color: var(--accent); }
   td.champ { font-family: var(--body); font-weight: 600; color: var(--ink); letter-spacing: 0; }
 
+  /* ---------------------------------------------------------- ladder */
+
+  .ladder { display: flex; flex-direction: column; gap: 12px; }
+  .lrow { display: grid; grid-template-columns: 15ch 1fr; gap: 12px; align-items: center; }
+  .lrow .key { font-size: 14.5px; color: var(--ink); font-weight: 500; }
+  .lbars { display: flex; flex-direction: column; gap: 4px; }
+  .lbar { display: grid; grid-template-columns: 4.5ch 1fr 6ch; gap: 8px; align-items: center; }
+  .lbar .venue {
+    font-family: var(--mono); font-size: 10.5px; letter-spacing: 0.08em;
+    text-transform: uppercase; color: var(--ink-3); text-align: right;
+  }
+  .lbar .meter { height: 14px; background: var(--rule-soft); border-radius: 3px; position: relative; }
+  .lbar .fill {
+    position: absolute; right: 50%; top: 0; height: 100%;
+    background: var(--lost); border-radius: 3px 0 0 3px;
+  }
+  .lbar .zero { position: absolute; left: 50%; top: -3px; bottom: -3px; width: 1px; background: var(--rule); }
+  .lbar .amt {
+    font-family: var(--mono); font-size: 12.5px; font-weight: 600;
+    color: var(--lost); font-variant-numeric: tabular-nums;
+  }
+
+  @media (max-width: 440px) { .lrow { grid-template-columns: 1fr; gap: 6px; } }
+
   /* ----------------------------------------------------------- method */
 
   .method { border-top: 2px solid var(--rule); padding-top: 22px; display: flex; flex-direction: column; gap: 12px; }
@@ -312,6 +336,28 @@
         <span class="big" style="color:var(--won)">57.4%</span>
         <span class="sub">+25.5 points on a 31.9% base. It helps visitors more.</span>
       </div>
+    </div>
+  </section>
+
+  <!-- ============================================== discipline -->
+  <section>
+    <h2>Fouling does not cost you the game. Being sent off does.</h2>
+
+    <p class="note">The raw figure looks damning: the side committing more fouls wins only <em>34.5%</em> and loses 40.6%. Almost all of that is venue. Away sides both foul more and win less, so the headline is really measuring who was at home.</p>
+
+    <p class="note">Held against each side's own base rate, the picture changes completely. Fouling more costs about two and a half points — next to nothing. A booking costs a little more. Only a sending-off genuinely decides matches, and it is the one event here that is plainly causal: the team finishes a man short.</p>
+
+    <h3>Change in win rate against that side's base rate</h3>
+    <div class="ladder" id="discipline"></div>
+
+    <p class="note">The foul gradient is the tell. Committing one or two extra fouls, a team wins <em>35.5%</em>; committing ten or more, <em>32.7%</em>. Barely a move across the whole range — set against shots on target, which climbs from 43.8% to 92.2% over its equivalent span.</p>
+
+    <h3>Leader's record, by margin of fouls committed</h3>
+    <div class="chart" id="foulgap"></div>
+    <div class="legend">
+      <span><i class="swatch won"></i>Fouled more, won</span>
+      <span><i class="swatch drew"></i>Drew</span>
+      <span><i class="swatch lost"></i>Fouled more, lost</span>
     </div>
   </section>
 
@@ -551,6 +597,62 @@
     host.insertAdjacentHTML("afterend",
       '<div class="legend"><span><i class="swatch lost"></i>Relegated immediately</span><span><i class="swatch won"></i>Stayed up</span></div>');
   })();
+
+  /* ---- discipline ladder ---- */
+  (function () {
+    const host = document.getElementById("discipline");
+    const rows = D.discipline;
+    // One scale across every bar, so the rows are comparable to each other.
+    const max = Math.max(...rows.flatMap(r => [Math.abs(+r.home_lift), Math.abs(+r.away_lift)]));
+
+    rows.forEach(r => {
+      const line = document.createElement("div"); line.className = "lrow";
+      const key = document.createElement("span"); key.className = "key"; key.textContent = r.metric;
+      const bars = document.createElement("div"); bars.className = "lbars";
+
+      [["Home", +r.home_lift], ["Away", +r.away_lift]].forEach(([venue, v]) => {
+        const bar = document.createElement("div"); bar.className = "lbar";
+        const lab = document.createElement("span"); lab.className = "venue"; lab.textContent = venue;
+
+        const meter = document.createElement("div"); meter.className = "meter";
+        const zero = document.createElement("i"); zero.className = "zero";
+        // Grow left of the zero line for a penalty, right for a gain, so the
+        // chart stays honest if any of these ever turns positive.
+        const fill = document.createElement("i"); fill.className = "fill";
+        const down = v < 0;
+        fill.style.width = (50 * Math.abs(v) / max) + "%";
+        fill.style.background = down ? "var(--lost)" : "var(--won)";
+        if (down) {
+          fill.style.right = "50%"; fill.style.left = "auto";
+          fill.style.borderRadius = "3px 0 0 3px";
+        } else {
+          fill.style.left = "50%"; fill.style.right = "auto";
+          fill.style.borderRadius = "0 3px 3px 0";
+        }
+        meter.append(zero, fill);
+
+        const amt = document.createElement("span"); amt.className = "amt";
+        amt.style.color = down ? "var(--lost)" : "var(--won)";
+        amt.textContent = (v > 0 ? "+" : "") + v.toFixed(1) + " pts";
+
+        const text = `${r.metric} · ${venue} · ${v.toFixed(1)} points vs base rate`;
+        meter.setAttribute("tabindex", "0");
+        meter.setAttribute("aria-label", text);
+        bind(meter, text);
+
+        bar.append(lab, meter, amt);
+        bars.appendChild(bar);
+      });
+
+      line.append(key, bars);
+      host.appendChild(line);
+    });
+  })();
+
+  /* ---- foul gap ---- */
+  stacked("foulgap", D.foul_gap.map(r => ({
+    key: r.gap, matches: +r.matches, won: +r.won, drew: +r.drew, lost: +r.lost
+  })), "Gap of");
 
   /* ================================================= match finder ==== */
   (function () {
