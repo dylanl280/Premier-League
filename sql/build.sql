@@ -54,7 +54,7 @@ SELECT
 FROM aggregated;
 
 
--- Referee data begins in 2000-01, so this covers 10,219 of 12,734 matches.
+-- Referee data begins in 2000-01, so this covers 9,910 of 12,734 matches.
 CREATE TABLE referees (
     referee_id         INTEGER PRIMARY KEY,
     name               VARCHAR NOT NULL UNIQUE,

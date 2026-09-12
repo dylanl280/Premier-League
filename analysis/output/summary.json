@@ -1,0 +1,14 @@
+{
+  "min_matches": 100,
+  "fdr_alpha": 0.05,
+  "matches_total": 12734,
+  "matches_with_referee": 9910,
+  "matches_with_cards": 9910,
+  "referees_tested": 34,
+  "significant": {
+    "card_asymmetry": 0,
+    "strictness": 8,
+    "outcome_residual": 0,
+    "raw_home_win": 0
+  }
+}
