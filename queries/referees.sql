@@ -1,7 +1,7 @@
 -- Referee exploration.
 --
--- In VS Code with the DuckDB extension: put the cursor in a statement and
--- press Ctrl+Shift+Enter to run just that one. Ctrl+Enter runs the file.
+-- In DBeaver: put the cursor in a statement and press Ctrl+Enter to run
+-- just that one, or Alt+X to run the whole file.
 --
 -- Referee data starts in 2000-01 and covers 9,910 of 12,734 matches.
 -- Median referee has only 11 matches, so every query here filters on a

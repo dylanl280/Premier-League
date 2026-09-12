@@ -1,92 +1,86 @@
--- Build the Premier League analysis database.
+-- Build the Premier League schema in PostgreSQL.
 --
---   Run from the repo root, after `python prepare_data.py`:
+--   python load_postgres.py        -- stages the rows, then runs this
 --
---       duckdb data/epl.duckdb < sql/build.sql
+-- or by hand, after prepare_data.py has written data/matches_clean.parquet
+-- and load_postgres.py has staged it:
 --
--- The paths below are relative, so the working directory must be the repo
--- root or the parquet will not be found.
+--   psql -h localhost -p 5433 -U postgres -d epl -f sql/build.sql
 --
--- Why the Python step is required first: nine referee values in the Kaggle
--- parquet carry a raw 0xa0 byte, so the file is not valid UTF-8 and DuckDB
--- refuses any query touching that column. prepare_data.py repairs them and
--- writes data/matches_clean.parquet, which is what this script reads.
+-- Postgres cannot read parquet, so load_postgres.py COPYs the cleaned rows
+-- into staging_matches and this script models from there.
+--
+-- Run order matters: dimensions before matches, matches before views.
 
--- Idempotent: safe to re-run over an existing database.
 DROP VIEW  IF EXISTS season_standings;
 DROP VIEW  IF EXISTS team_matches;
 DROP TABLE IF EXISTS matches;
 DROP TABLE IF EXISTS teams;
 DROP TABLE IF EXISTS referees;
 
-CREATE OR REPLACE TEMP VIEW src AS
-    SELECT * FROM 'data/matches_clean.parquet';
-
 
 -- ---------------------------------------------------------------- dimensions
 
 CREATE TABLE teams (
     team_id        INTEGER PRIMARY KEY,
-    name           VARCHAR NOT NULL UNIQUE,
-    first_season   VARCHAR NOT NULL,
-    last_season    VARCHAR NOT NULL,
+    name           TEXT    NOT NULL UNIQUE,
+    first_season   TEXT    NOT NULL,
+    last_season    TEXT    NOT NULL,
     seasons_played INTEGER NOT NULL
 );
 
 INSERT INTO teams
 WITH sides AS (
-    SELECT home_team AS name, season FROM src
+    SELECT home_team AS name, season FROM staging_matches
     UNION ALL
-    SELECT away_team AS name, season FROM src
+    SELECT away_team AS name, season FROM staging_matches
 ),
 aggregated AS (
     SELECT
         name,
-        MIN(season)             AS first_season,
-        MAX(season)             AS last_season,
-        COUNT(DISTINCT season)  AS seasons_played
+        MIN(season)            AS first_season,
+        MAX(season)            AS last_season,
+        COUNT(DISTINCT season) AS seasons_played
     FROM sides
     GROUP BY name
 )
 SELECT
-    ROW_NUMBER() OVER (ORDER BY name) AS team_id,
-    name, first_season, last_season, seasons_played
+    ROW_NUMBER() OVER (ORDER BY name)::INTEGER AS team_id,
+    name, first_season, last_season, seasons_played::INTEGER
 FROM aggregated;
 
 
--- Referee data begins in 2000-01, so this covers 9,910 of 12,734 matches.
+-- Referee data begins in 2000-01, covering 9,910 of 12,734 matches.
 CREATE TABLE referees (
     referee_id         INTEGER PRIMARY KEY,
-    name               VARCHAR NOT NULL UNIQUE,
-    first_season       VARCHAR NOT NULL,
-    last_season        VARCHAR NOT NULL,
+    name               TEXT    NOT NULL UNIQUE,
+    first_season       TEXT    NOT NULL,
+    last_season        TEXT    NOT NULL,
     matches_officiated INTEGER NOT NULL
 );
 
 INSERT INTO referees
 WITH aggregated AS (
     SELECT
-        referee AS name,
+        referee     AS name,
         MIN(season) AS first_season,
         MAX(season) AS last_season,
         COUNT(*)    AS matches_officiated
-    FROM src
+    FROM staging_matches
     WHERE referee IS NOT NULL
     GROUP BY referee
 )
 SELECT
-    ROW_NUMBER() OVER (ORDER BY name) AS referee_id,
-    name, first_season, last_season, matches_officiated
+    ROW_NUMBER() OVER (ORDER BY name)::INTEGER AS referee_id,
+    name, first_season, last_season, matches_officiated::INTEGER
 FROM aggregated;
 
 
 -- ------------------------------------------------------------------- matches
 
--- Stays wide, one row per real-world match, mirroring the source. The
--- team_matches view below unpivots it for analysis.
 CREATE TABLE matches (
-    match_id     INTEGER PRIMARY KEY,
-    season       VARCHAR     NOT NULL,
+    match_id     INTEGER     PRIMARY KEY,
+    season       TEXT        NOT NULL,
     kickoff      TIMESTAMPTZ NOT NULL,
 
     home_team_id INTEGER     NOT NULL REFERENCES teams(team_id),
@@ -96,11 +90,11 @@ CREATE TABLE matches (
 
     home_goals   INTEGER     NOT NULL,
     away_goals   INTEGER     NOT NULL,
-    result       VARCHAR     NOT NULL,  -- 'H' home win, 'D' draw, 'A' away win
+    result       TEXT        NOT NULL,  -- 'H' home win, 'D' draw, 'A' away win
 
     ht_home_goals INTEGER,
     ht_away_goals INTEGER,
-    ht_result     VARCHAR,
+    ht_result     TEXT,
 
     -- Match stats: present from 2000-01 onward, NULL before.
     home_shots            INTEGER,
@@ -116,13 +110,13 @@ CREATE TABLE matches (
     home_reds             INTEGER,
     away_reds             INTEGER,
 
-    CHECK (result IN ('H', 'D', 'A')),
-    CHECK (home_team_id <> away_team_id)
+    CONSTRAINT result_is_valid CHECK (result IN ('H', 'D', 'A')),
+    CONSTRAINT no_self_fixture CHECK (home_team_id <> away_team_id)
 );
 
 INSERT INTO matches
 SELECT
-    ROW_NUMBER() OVER (ORDER BY s.kickoff, s.home_team) AS match_id,
+    ROW_NUMBER() OVER (ORDER BY s.kickoff, s.home_team)::INTEGER AS match_id,
     s.season,
     s.kickoff,
     h.team_id,
@@ -140,7 +134,7 @@ SELECT
     s.home_fouls, s.away_fouls,
     s.home_yellows, s.away_yellows,
     s.home_reds, s.away_reds
-FROM src s
+FROM staging_matches s
 JOIN teams h ON s.home_team = h.name
 JOIN teams a ON s.away_team = a.name
 LEFT JOIN referees r ON s.referee = r.name;
@@ -153,10 +147,9 @@ CREATE INDEX idx_matches_away    ON matches(away_team_id);
 
 -- --------------------------------------------------------------------- views
 
--- One row per team per match: 2 x matches. Most questions ("how did Arsenal
--- do", "what happens under referee X") are awkward against the wide table
--- because a team appears in either home_team or away_team; here it appears
--- exactly once per match played, with its own stats and the opponent's.
+-- One row per team per match: 2 x matches. Against the wide matches table a
+-- club sits in either home_team_id or away_team_id, so any per-team question
+-- needs a UNION; here it appears exactly once per match played.
 CREATE VIEW team_matches AS
 SELECT
     match_id, season, kickoff, referee_id,
@@ -209,28 +202,25 @@ FROM matches;
 
 -- League table per season.
 --
--- position orders by points, then goal difference, then goals scored. Those
--- are the real Premier League tiebreakers except the last one: teams level on
--- all three are separated by head-to-head record, which this does not apply.
--- That case is rare and has never decided a title.
+-- position orders by points, then goal difference, then goals scored - the
+-- real Premier League tiebreakers except head-to-head, which applies only
+-- when teams are level on all three and has never decided a title.
 --
--- Note 1993-94 and 1994-95 have 42 games per team, not 38 - the league ran 22
--- clubs before shrinking to 20 in 1995-96. Compare eras on points-per-game.
+-- 1993-94 and 1994-95 have 42 games per team, not 38: the league ran 22 clubs
+-- before shrinking to 20 in 1995-96. Compare eras on points-per-game.
 CREATE VIEW season_standings AS
 WITH totals AS (
     SELECT
         season,
         team_id,
-        COUNT(*)                             AS played,
-        COUNT(*) FILTER (WHERE result = 'W') AS won,
-        COUNT(*) FILTER (WHERE result = 'D') AS drawn,
-        COUNT(*) FILTER (WHERE result = 'L') AS lost,
-        -- Cast down from HUGEINT: pandas has no 128-bit integer, so an
-        -- uncast SUM() surfaces as a float and points read as "84.0".
-        SUM(goals_for)::INTEGER                        AS goals_for,
-        SUM(goals_against)::INTEGER                    AS goals_against,
+        COUNT(*)::INTEGER                             AS played,
+        COUNT(*) FILTER (WHERE result = 'W')::INTEGER AS won,
+        COUNT(*) FILTER (WHERE result = 'D')::INTEGER AS drawn,
+        COUNT(*) FILTER (WHERE result = 'L')::INTEGER AS lost,
+        SUM(goals_for)::INTEGER                       AS goals_for,
+        SUM(goals_against)::INTEGER                   AS goals_against,
         (SUM(goals_for) - SUM(goals_against))::INTEGER AS goal_diff,
-        SUM(points)::INTEGER                           AS points
+        SUM(points)::INTEGER                          AS points
     FROM team_matches
     GROUP BY season, team_id
 )
@@ -239,5 +229,5 @@ SELECT
     ROW_NUMBER() OVER (
         PARTITION BY season
         ORDER BY points DESC, goal_diff DESC, goals_for DESC
-    ) AS position
+    )::INTEGER AS position
 FROM totals;

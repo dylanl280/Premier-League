@@ -1,21 +1,21 @@
-"""Repair the source data and write a parquet DuckDB can actually read.
+"""Repair the source data and write a clean parquet.
 
 Run:  python prepare_data.py
 
 This is the one step that cannot be done in SQL. Nine referee values in the
 Kaggle parquet carry a raw 0xa0 byte - a cp1252 non-breaking space - so the
-file is not valid UTF-8, and DuckDB refuses it outright:
+file is not valid UTF-8.
 
-    Invalid Input Error: Invalid string encoding found in Parquet file
-    "data/results.parquet": value "\\xA0U Rennie" is not valid UTF8!
+Nothing downstream tolerates that. pandas cannot even materialise the
+column (both .tolist() and pyarrow's to_pylist() raise on those rows), and
+a UTF8 Postgres database rejects the bytes on COPY. Each bad value is also
+a duplicate of a real referee, so left alone it splits that referee into
+two identities and corrupts any per-referee analysis.
 
-COUNT(*) succeeds because it never touches the column, but any query
-referencing Referee fails. pandas cannot materialise it either - both
-.tolist() and pyarrow's to_pylist() raise on those rows.
-
-So this script decodes the column byte by byte, normalises the names, and
-writes data/matches_clean.parquet with final snake_case column names.
-Everything after this point is plain SQL in sql/build.sql.
+So this decodes the column byte by byte, normalises the names, nulls a
+handful of physically impossible shot counts, and writes
+data/matches_clean.parquet with final snake_case column names. Everything
+after this point is plain SQL in sql/build.sql.
 """
 
 import sys
@@ -171,7 +171,7 @@ def main() -> None:
 
     size_kb = OUT_PATH.stat().st_size / 1024
     print(f"\nWrote {len(df):,} matches to {OUT_PATH.name} ({size_kb:.0f} KB)")
-    print("Now run:  duckdb data/epl.duckdb < sql/build.sql")
+    print("Now run:  python load_postgres.py")
 
 
 if __name__ == "__main__":

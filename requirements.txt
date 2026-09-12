@@ -8,8 +8,7 @@ python-dotenv==1.2.3
 kagglehub==1.0.2
 pyarrow==25.0.1
 
-# Databases
-duckdb==1.5.5
+# Database
 psycopg[binary]==3.3.5
 
 # Plotting

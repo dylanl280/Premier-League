@@ -1,6 +1,6 @@
 -- Integrity checks for the built database.
 --
---   duckdb data/epl.duckdb < sql/validate.sql
+--   psql -h localhost -p 5433 -U postgres -d epl -f sql/validate.sql
 --
 -- Every row should read PASS. Each check is written so that "expected" is a
 -- fact about Premier League history, not a number copied from the data.
@@ -24,7 +24,7 @@ WITH checks AS (
 
     UNION ALL SELECT 5, 'no referee name has stray whitespace or non-ASCII',
            (SELECT COUNT(*) FROM referees
-            WHERE name <> trim(name) OR NOT regexp_matches(name, '^[ -~]+$'))::VARCHAR,
+            WHERE name <> trim(name) OR NOT (name ~ '^[ -~]+$'))::VARCHAR,
            '0'
 
     -- 380 per completed season, except the 22-team era and the season in progress.

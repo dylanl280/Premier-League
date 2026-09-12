@@ -1,22 +1,11 @@
 # Premier League
 
-Premier League match results from 1993-94 to the current season, as a queryable
-DuckDB database. 12,734 matches, 34 seasons, 51 teams, 164 referees.
+Premier League match results from 1993-94 to the current season, in PostgreSQL.
+12,734 matches, 34 seasons, 51 teams, 164 referees.
 
 ## Setup
 
-Python 3.13 and the DuckDB CLI. Both are already installed on this machine; on a
-fresh one:
-
-```powershell
-winget install Python.Python.3.13
-winget install DuckDB.cli
-```
-
-Both winget packages install machine-wide and trigger a UAC prompt. If that is
-inconvenient, the DuckDB CLI also ships as a portable zip that needs no admin —
-extract `duckdb.exe` anywhere on `PATH`. That is how it is installed here, at
-`%LOCALAPPDATA%\Programs\DuckDB`.
+### Python
 
 ```powershell
 python -m venv C:\venvs\premier-league          # keep it out of OneDrive
@@ -24,49 +13,83 @@ C:\venvs\premier-league\Scripts\Activate.ps1
 pip install -r requirements.txt
 ```
 
+The venv lives outside OneDrive deliberately. A venv is ~15,800 small files;
+inside a synced folder, enumerating them took over 120 seconds against 0.38
+seconds on local disk.
+
+### PostgreSQL
+
+The project runs its own PostgreSQL 18.6 on **port 5433**, installed from the
+binaries zip so it needs no admin rights. Port 5432 belongs to a separate,
+pre-existing PostgreSQL 17 service that this project never touches.
+
+Its data directory is `C:\pgdata\epl` - outside OneDrive, for the same reason
+as the venv, and because a database cluster inside a synced folder invites
+corruption.
+
+It runs as a user process, not a Windows service, so **it does not survive a
+reboot**:
+
+```powershell
+.\scripts\pg-start.ps1     # start it (also after every reboot)
+.\scripts\pg-stop.ps1      # stop it
+```
+
+Credentials are in `.env`, which is gitignored. See `.env.example`.
+
+### DBeaver
+
+DBeaver Community 26.2 is installed at `%LOCALAPPDATA%\Programs\dbeaver`
+(portable, bundled JRE, no admin), with a pre-configured connection:
+
+| Field | Value |
+|---|---|
+| Host | `localhost` |
+| Port | **5433** |
+| Database | `epl` |
+| User | `postgres` |
+
+DBeaver bundles the Postgres driver, so nothing is downloaded on first connect.
+
 ## Building the database
 
-Two commands. The first is Python, the second is plain SQL you can read and edit:
-
 ```bash
-python prepare_data.py                      # repairs source data -> data/matches_clean.parquet
-duckdb data/epl.duckdb < sql/build.sql      # creates tables + views
-duckdb data/epl.duckdb < sql/validate.sql   # 16 integrity checks, all should read PASS
+python load_postgres.py
 ```
 
-Run them from the repo root — `sql/build.sql` uses relative paths.
-
-Or do all three at once:
+That runs three steps you can equally run by hand:
 
 ```bash
-python build_db.py
+python prepare_data.py                                          # repair source data
+psql -h localhost -p 5433 -U postgres -d epl -f sql/build.sql   # tables + views
+psql -h localhost -p 5433 -U postgres -d epl -f sql/validate.sql
 ```
 
-`build_db.py` runs exactly those commands, so the two paths cannot drift apart.
-All the modelling lives in `sql/build.sql`, never in Python.
+All the modelling lives in `sql/build.sql`, never in Python, so the scripted
+and manual paths cannot drift apart. `load_postgres.py` exits non-zero if any
+of the 18 validation checks fails.
 
 ### Why the Python step exists
 
-`prepare_data.py` is not a convenience wrapper — it is required. Nine referee
-values in the Kaggle parquet carry a raw `0xa0` byte (a cp1252 non-breaking
-space), so the file is not valid UTF-8 and DuckDB refuses it:
+`prepare_data.py` is required, not a convenience. Nine referee values in the
+Kaggle parquet carry a raw `0xa0` byte - a cp1252 non-breaking space - so the
+file is not valid UTF-8. pandas cannot even materialise the column, and a UTF8
+Postgres database rejects the bytes on `COPY`.
 
-```
-Invalid Input Error: Invalid string encoding found in Parquet file
-"data/results.parquet": value "\xA0U Rennie" is not valid UTF8!
-```
+Each bad value is also a *duplicate of a real referee*. Repairing them collapses
+174 raw names into the 164 actual referees, which matters for any per-referee
+analysis: without it, nine referees are silently split across two identities.
 
-`COUNT(*)` still works because it never touches the column, but any query
-referencing `Referee` fails outright. Each bad value is also a *duplicate of a
-real referee* — repairing them collapses 174 raw names into 164 actual referees,
-which matters for any per-referee analysis.
+It also nulls six team-sides whose shot counts are physically impossible - more
+shots on target than shots, or goals from zero shots.
 
 ## Querying
 
-From the CLI:
+Through DBeaver, or from Python:
 
-```bash
-duckdb data/epl.duckdb
+```python
+from db import query
+query("SELECT * FROM team_matches WHERE season = '2024-25' LIMIT 10")
 ```
 
 ```sql
@@ -76,13 +99,6 @@ WHERE s.season = '2024-25'
 ORDER BY s.position;
 ```
 
-From Python:
-
-```python
-from db import query
-query("SELECT * FROM team_matches WHERE season = '2024-25' LIMIT 10")
-```
-
 ## Schema
 
 | Object | Rows | Notes |
@@ -90,92 +106,60 @@ query("SELECT * FROM team_matches WHERE season = '2024-25' LIMIT 10")
 | `teams` | 51 | name, first/last season, seasons played |
 | `referees` | 164 | post-repair; data begins 2000-01 |
 | `matches` | 12,734 | one row per match, wide (home/away columns) |
-| `team_matches` | 25,468 | **view** — one row per team per match |
-| `season_standings` | — | **view** — league table per season |
+| `team_matches` | 25,468 | **view** - one row per team per match |
+| `season_standings` | - | **view** - league table per season |
 
-`team_matches` is the one to reach for. Against the wide `matches` table a club
-appears in either `home_team_id` or `away_team_id`, so "how did Arsenal do" needs
-a UNION every time; in `team_matches` it appears exactly once per match played,
-with its own stats and the opponent's.
+**`matches` has two foreign keys into `teams`** - `home_team_id` and
+`away_team_id` - so joining team names means joining `teams` twice with
+aliases. DBeaver's visual join builder will often wire up only one.
+
+`team_matches` exists to avoid that. A club appears exactly once per match it
+played, with its own stats and the opponent's, so most questions need a single
+join. Reach for `matches` only when you genuinely need both sides in one row -
+head-to-head records, or home-vs-away comparisons.
 
 Column names are explicit snake_case rather than the source's `HS`/`AS`/`FTHG`
-shorthand. That is not cosmetic: the source's away-shots column is literally named
-`AS`, a reserved SQL keyword.
-
-## PostgreSQL and DBeaver
-
-The same data also lives in PostgreSQL, for querying through DBeaver. DuckDB
-stays the analysis engine; Postgres is the GUI-friendly copy.
-
-### Why port 5433
-
-This machine already runs a **PostgreSQL 17 Windows service on 5432**. That
-instance is left completely alone. The project instance is a separate
-PostgreSQL 18.6 on **5433**, with its data directory at `C:\pgdata\epl`,
-installed from the binaries zip so it needs no admin rights.
-
-It runs as a user process, not a service, so **it does not survive a reboot**:
-
-```powershell
-.\scripts\pg-start.ps1     # start it (also after every reboot)
-.\scripts\pg-stop.ps1      # stop it
-```
-
-The data directory deliberately sits outside OneDrive. A Postgres cluster
-inside a synced folder invites corruption, for the same reason the venv is
-kept out.
-
-### Loading
-
-```bash
-python prepare_data.py     # if not already run
-python load_postgres.py    # COPY into staging, then run sql/postgres/build.sql
-```
-
-Verify with the same 16 checks:
-
-```bash
-psql -h localhost -p 5433 -U postgres -d epl -f sql/postgres/validate.sql
-```
-
-All 16 pass against both engines. Since the DuckDB and Postgres schemas are
-built by separate SQL files, their agreement cross-checks the modelling.
-
-### Connecting DBeaver
-
-DBeaver Community 26.2 is installed at `%LOCALAPPDATA%\Programs\dbeaver`
-(portable, bundled JRE, no admin). Two connections are pre-configured:
-
-| Connection | URL |
-|---|---|
-| EPL (PostgreSQL 18) | `jdbc:postgresql://localhost:5433/epl` |
-| EPL (DuckDB) | `jdbc:duckdb:.../data/epl.duckdb` (read-only) |
-
-Passwords are not saved in the DBeaver config, so it prompts on first
-connect. Credentials live in `.env`, which is gitignored; see `.env.example`.
-
-If a connection does not appear, add it by hand: **Database → New Database
-Connection → PostgreSQL**, host `localhost`, port `5433`, database `epl`,
-user `postgres`. DBeaver bundles the Postgres driver; for DuckDB it fetches
-the JDBC driver from Maven on first connect.
+shorthand. Not cosmetic: the source's away-shots column is literally named `AS`,
+a reserved SQL keyword.
 
 ## Data caveats
 
 - **Match stats begin in 2000-01.** Shots, corners, fouls, cards and referee are
-  NULL for 1993-94 to 1999-00 — 22% of matches. Filter to 2000-01 onward or
+  NULL for 1993-94 to 1999-00 - 22% of matches. Filter to 2000-01 onward or
   aggregates silently average over nulls. Goals and results are complete.
 - **1993-94 and 1994-95 have 462 matches, not 380.** The league ran 22 clubs
-  before shrinking to 20 in 1995-96. Compare eras on points-per-game, not raw
-  points. This is correct, not a data error.
+  before shrinking to 20 in 1995-96. Compare eras on points-per-game. Correct,
+  not a data error.
+- **51 matches show goals exceeding shots on target.** These are own goals - the
+  goal counts on the scoreline but is not a shot on target for the team credited
+  with it. Also correct, not a data error.
+- **2020-21 starts in September**, the COVID delay.
 - **The current season is partial** and fills in as matches are played.
 
 See [data/README.md](data/README.md) for sources and licensing.
 
+## Analysis
+
+```bash
+python analysis/referee_bias.py
+```
+
+Tests whether referees affect match outcomes, over the 9,910 matches carrying a
+referee. Outcomes are compared against an Elo expectation built chronologically,
+so each match is predicted only from ratings that existed before kickoff.
+Everything is season-centred, and per-referee tests are Benjamini-Hochberg FDR
+corrected across the 34 referees with 100+ matches.
+
+Findings: referees differ strongly in **strictness** (8 of 34 significant,
+spanning 1.58 yellow cards per match), but show **no home/away card bias** and
+**no measurable effect on results** (0 of 34 on both). Results land in
+`analysis/output/`.
+
 ## Refreshing
 
 ```bash
-python update_data.py    # fetch latest seasons from football-data.co.uk
-python build_db.py       # rebuild
+python update_data.py      # fetch latest seasons from football-data.co.uk
+python load_postgres.py    # rebuild
 ```
 
 ## Files
@@ -184,17 +168,14 @@ python build_db.py       # rebuild
 |---|---|
 | `load_data.py` | Loads and merges the two parquet sources |
 | `update_data.py` | Fetches recent seasons from football-data.co.uk |
-| `prepare_data.py` | Repairs the referee encoding, writes clean parquet |
+| `prepare_data.py` | Repairs encoding and impossible values, writes clean parquet |
+| `load_postgres.py` | Builds and validates the database end to end |
 | `sql/build.sql` | Creates all tables and views |
-| `sql/validate.sql` | 16 integrity checks |
-| `build_db.py` | Runs the above end to end |
+| `sql/validate.sql` | 18 integrity checks |
 | `db.py` | `query()` helper returning DataFrames |
-| `load_postgres.py` | Loads the same data into PostgreSQL |
-| `sql/postgres/build.sql` | Postgres schema and views |
-| `sql/postgres/validate.sql` | The same 16 checks, Postgres dialect |
-| `scripts/pg-start.ps1` | Start the local Postgres instance |
-| `scripts/pg-stop.ps1` | Stop it |
 | `queries/referees.sql` | Referee exploration queries |
+| `analysis/referee_bias.py` | Phase 2a statistical analysis |
+| `scripts/pg-start.ps1` / `pg-stop.ps1` | Start and stop the local server |
 
-`data/epl.duckdb` and `data/matches_clean.parquet` are derived and gitignored —
-rebuild them rather than committing them.
+`data/matches_clean.parquet` is derived and gitignored - rebuild it rather than
+committing it.
